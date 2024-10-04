@@ -1,0 +1,179 @@
+-- Configuration
+local recipeBookFile = "recipe-book"  -- File where all recipes are saved
+local checkInterval = 5               -- Time to wait (in seconds) before checking chest again
+
+-- Function to load the recipe book
+function loadRecipeBook()
+    if not fs.exists(recipeBookFile) then
+        return {} -- Return an empty table if no recipe book exists
+    end
+    local file = fs.open(recipeBookFile, "r")
+    local recipes = textutils.unserialize(file.readAll())
+    file.close()
+    return recipes
+end
+
+-- Function to save the recipe book
+function saveRecipeBook(recipes)
+    local file = fs.open(recipeBookFile, "w")
+    file.write(textutils.serialize(recipes))
+    file.close()
+end
+
+-- Function to detect all mechanical crafter peripherals
+function detectCrafters()
+    local crafters = {}
+
+    -- Get all connected peripherals
+    local peripherals = peripheral.getNames()
+
+    -- Loop through all peripherals and check for "mechanical_crafter"
+    for _, name in ipairs(peripherals) do
+        if string.find(name, "mechanical_crafter") then
+            table.insert(crafters, name)
+        end
+    end
+
+    return crafters
+end
+
+-- Function to snapshot the current items in the Mechanical Crafters
+function snapshotRecipe()
+    local recipe = {}
+
+    -- Detect all mechanical crafters
+    local crafters = detectCrafters()
+    if #crafters == 0 then
+        print("No mechanical crafters detected.")
+        return
+    end
+
+    print("Detected " .. #crafters .. " mechanical crafters.")
+
+    -- Scan each crafter for the item inside
+    for _, crafterName in ipairs(crafters) do
+        local crafter = peripheral.wrap(crafterName)
+        local crafterContent = crafter.list()[1] -- Assuming only 1 slot per crafter
+
+        if crafterContent then
+            -- Save both the crafter name and the item it contains
+            table.insert(recipe, { crafter = crafterName, item = crafterContent.name })
+            print("Detected item '" .. crafterContent.name .. "' in crafter '" .. crafterName .. "'")
+        else
+            print("Crafter '" .. crafterName .. "' is empty. Skipping.")
+        end
+    end
+
+    -- Ask the player for the recipe name
+    print("Enter a name for this recipe:")
+    local recipeName = read()
+
+    -- Save the recipe in the recipe book
+    local recipes = loadRecipeBook()
+    recipes[recipeName] = recipe
+    saveRecipeBook(recipes)
+
+    print("Recipe '" .. recipeName .. "' saved successfully!")
+end
+
+-- Function to find the correct item slot in the input chest
+function findItemInChest(inputChest, itemName)
+    local chest = peripheral.wrap(inputChest)
+    if not chest then
+        error("Input chest '" .. inputChest .. "' not found.")
+    end
+
+    -- Iterate through chest slots to find the item
+    for slot, item in pairs(chest.list()) do
+        if item.name == itemName then
+            return slot, item.count  -- Return the slot number and item count
+        end
+    end
+    return nil  -- Item not found
+end
+
+-- Function to move items from the chest to the Mechanical Crafters based on a recipe
+function startCrafting(recipe, inputChest)
+    for _, crafterInfo in ipairs(recipe) do
+        local itemName = crafterInfo.item
+        local crafterName = crafterInfo.crafter
+
+        -- Keep checking until the item is found in the chest
+        while true do
+            local chestSlot, itemCount = findItemInChest(inputChest, itemName)
+
+            if chestSlot then
+                local crafter = peripheral.wrap(crafterName)
+                if crafter then
+                    -- Move 1 item from the chest to the crafter
+                    crafter.pullItems(inputChest, chestSlot, 1)  -- Adjust the amount as needed
+                    print("Moved 1 '" .. itemName .. "' to crafter '" .. crafterName .. "'")
+                    break  -- Break the loop once the item has been moved
+                else
+                    print("Error: Could not wrap peripheral '" .. crafterName .. "'")
+                    break
+                end
+            else
+                print("Item '" .. itemName .. "' not found in chest. Retrying in " .. checkInterval .. " seconds...")
+                sleep(checkInterval)  -- Wait for a bit before checking again
+            end
+        end
+    end
+
+    print("Crafting process complete!")
+end
+
+-- Main Script
+
+-- Load the recipe book
+print("Loading recipe book...")
+local recipeBook = loadRecipeBook()
+
+
+while true do
+    print("\nWhat would you like to do?")
+    print("1. Snapshot the current items in the Mechanical Crafters to save a recipe.")
+    print("2. Start crafting using a saved recipe.")
+    print("3. Exit.")
+    
+    local choice = tonumber(read())
+
+    if choice == 1 then
+        -- Snapshot the current items in the crafters
+        snapshotRecipe()
+
+    elseif choice == 2 then
+	print("Available recipes:")
+        for recipeName, _ in pairs(recipeBook) do
+            print("- " .. recipeName)
+        end
+	print("Please enter the name of the recipe to use:")
+        local recipeName = read()
+	if recipeBook[recipeName] then
+            print("Please enter the peripheral name of the chest to pull items from:")
+            local inputChest = read()
+        while true do
+        
+        
+
+        
+
+            -- Move items to crafters based on the recipe
+            startCrafting(recipeBook[recipeName], inputChest)
+	redstone.setAnalogOutput("back",15)
+	sleep(7)
+	redstone.setAnalogOutput("back",0)
+	end
+        else
+            print("Error: Recipe '" .. recipeName .. "' not found.")
+        end
+	
+    elseif choice == 3 then
+        -- Exit the program
+        print("Goodbye!")
+        break
+
+    else
+        print("Invalid choice, please try again.")
+    end
+end
